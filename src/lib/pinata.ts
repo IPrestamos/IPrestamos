@@ -6,7 +6,7 @@ const headers = {
   Authorization: `Bearer ${process.env.NEXT_PUBLIC_PINATA_JWT}`
 };
 
-export async function uploadToPinata(file: File) {
+export async function uploadToPinata(file: Blob & { name: string }) {
   const formData = new FormData();
   formData.append('file', file);
 

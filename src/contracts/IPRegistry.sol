@@ -69,12 +69,12 @@ contract IPRegistry is ERC721, Ownable, IERC2981 {
     /// @notice Return full tokenURI
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         require(creators[tokenId] != address(0), "Query for nonexistent token");
-        return string(abi.encodePacked(baseURI, tokenURIs[tokenId]));
+        return tokenURIs[tokenId];
     }
 
     /// @notice Base metadata URI fallback
     function _baseURI() internal view override returns (string memory) {
-        return baseURI;
+        return "";
     }
 
     /// @notice Support for EIP-2981
