@@ -1,6 +1,18 @@
 # IP-Backed Lending Protocol
 
-A decentralized lending protocol that enables NFT holders to use their intellectual property as collateral for loans, built during ETHGlobal Camp and deployed on Arbitrum.
+A decentralized lending protocol that enables NFT holders to use their intellectual property as collateral for loans, built during ETH 5 de Mayo and deployed on Arbitrum.
+
+## Why It Matters
+
+The global intellectual property market is valued at over $180B, with significant growth expected in the coming years. However, creators face challenges in:
+- Monetizing their IP assets before market success
+- Accessing traditional financing due to IP valuation complexity
+- Managing cross-border IP rights and licensing
+
+Our protocol bridges this gap by enabling:
+- Immediate liquidity for IP holders
+- Transparent valuation mechanisms
+- Cross-chain IP rights management
 
 ## Overview
 
@@ -13,7 +25,7 @@ This protocol enables creators to:
 
 ### On Camp Chain
 - **IP Registry (NFT Contract)**
-  - Address: `${CONTRACT_ADDRESS}`
+  - Address: [`0x622D7a12A914A6aB3878E536275F272479Ec15af`](https://basecamp.cloud.blockscout.com/address/0x622D7a12A914A6aB3878E536275F272479Ec15af)
   - Features:
     - Mint soulbound IP tokens
     - Set license terms (commercial use, derivatives)
@@ -21,7 +33,7 @@ This protocol enables creators to:
     - Store metadata on Pinata IPFS
 
 - **Collateral Manager**
-  - Address: `${COLLATERAL_MANAGER_ADDRESS}`
+  - Address: [`0x622D7a12A914A6aB3878E536275F272479Ec15af`](https://basecamp.cloud.blockscout.com/address/0x622D7a12A914A6aB3878E536275F272479Ec15af)
   - Features:
     - Lock NFT collateral during loan period
     - Release collateral upon loan repayment
@@ -29,7 +41,7 @@ This protocol enables creators to:
 
 ### On Arbitrum
 - **Loan Manager**
-  - Address: `${LOAN_MANAGER_ADDRESS}`
+  - Address: [`0xA6c526e5B4F3304245D00b7198907534C4cD3B8F`](https://testnet.routescan.io/address/0xA6c526e5B4F3304245D00b7198907534C4cD3B8F/contract/421614/code)
   - Features:
     - Process loan requests
     - Handle loan repayments
