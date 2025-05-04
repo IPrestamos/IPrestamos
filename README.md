@@ -39,13 +39,15 @@ This protocol enables creators to:
 ## Architecture
 
 ```mermaid
-graph TD
+flowchart TD
     A[User] -->|1. Register IP| B[IP Registry]
     A -->|2. Request Loan| C[Loan Manager]
     C -->|3. Lock Collateral| D[Collateral Manager]
     A -->|4. Repay Loan| C
     C -->|5. Release Collateral| D
-    B & C & D -->|Cross-chain Messages| E[Hyperlane]
+    B --> E[Hyperlane]
+    C --> E
+    D --> E
 ```
 
 ## Key Features
@@ -101,6 +103,5 @@ MIT
 
 ## Acknowledgments
 
-- ETHGlobal Camp
-- Hyperlane Team
-- Arbitrum Foundation
+- ETH 5 de Mayo
+- Frutero Club
