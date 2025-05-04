@@ -5,7 +5,7 @@ import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount, useContractRead, useContractWrite } from 'wagmi';
 import Image from 'next/image';
 import Link from 'next/link';
-import { CONTRACT_ADDRESS, ABI } from '@/lib/contract';
+import { LOAN_MANAGER_ADDRESS, LOAN_MANAGER_ABI } from '@/lib/contract';
 import { Abi, parseEther } from 'viem';
 
 const IPFS_GATEWAY = 'https://moccasin-mere-chinchilla-829.mypinata.cloud/ipfs/';
@@ -80,17 +80,15 @@ export default function LoansContent() {
 
   // Fetch active loans
   const { data: loansData, isLoading: isLoadingLoans } = useContractRead({
-    address: CONTRACT_ADDRESS as `0x${string}`,
-    abi: ABI as Abi,
+    address: LOAN_MANAGER_ADDRESS as `0x${string}`,
+    abi: LOAN_MANAGER_ABI as Abi,
     functionName: 'getActiveLoans',
   });
 
   // Contract write for repayment
   const { write: repayLoan } = useContractWrite({
-    ...CONTRACT_ADDRESS && {
-      address: CONTRACT_ADDRESS as `0x${string}`,
-    },
-    abi: ABI as Abi,
+    address: LOAN_MANAGER_ADDRESS as `0x${string}`,
+    abi: LOAN_MANAGER_ABI as Abi,
     functionName: 'repayLoan',
   });
 
@@ -109,7 +107,7 @@ export default function LoansContent() {
         const loanPromises = loans.map(async (loan) => {
           try {
             // Get token URI
-            const tokenUriResult = await fetch(`${CONTRACT_ADDRESS}/token/${loan.tokenId}/uri`);
+            const tokenUriResult = await fetch(`${LOAN_MANAGER_ADDRESS}/token/${loan.tokenId}/uri`);
             const tokenUri = await tokenUriResult.text();
             
             // Fetch metadata from IPFS

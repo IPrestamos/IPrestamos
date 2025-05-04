@@ -2,12 +2,16 @@
 
 import { useState, useEffect } from 'react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useAccount, useContractReads } from 'wagmi';
+import { useAccount } from 'wagmi';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import { CONTRACT_ADDRESS, ABI } from '@/lib/contract';
-import { Abi } from 'viem';
+import { CONTRACT_ADDRESS, ABI, LOAN_MANAGER_ADDRESS, LOAN_MANAGER_ABI, COLLATERAL_MANAGER_ADDRESS } from '@/lib/contract';
+import { parseEther, type Hash } from 'viem';
+import { useContractReads, useTransaction, useContractWrite, useWaitForTransactionReceipt, useWriteContract } from 'wagmi';
+import type { BaseError } from 'viem';
+import type { Config } from 'wagmi';
+import { LOAN_MANAGER_ABI as ContractLOAN_MANAGER_ABI, type LoanManagerFunctions } from '@/lib/contract';
 
 const IPFS_GATEWAY = 'https://moccasin-mere-chinchilla-829.mypinata.cloud/ipfs/';
 
@@ -25,18 +29,6 @@ function convertIpfsUrl(url: string): string {
   return cleanUrl;
 }
 
-interface NFT {
-  id: number;
-  name: string;
-  description: string;
-  image: string;
-  commercialUse: boolean;
-  derivativeWorks: boolean;
-  expiry: string;
-  mediaType: 'image' | 'video';
-  estimatedValue: number;
-}
-
 interface LicenseTerms {
   commercialUse: boolean;
   derivativeWorksAllowed: boolean;
@@ -49,6 +41,18 @@ function getMediaType(filename: string): 'image' | 'video' {
   return videoExtensions.some(ext => filename.toLowerCase().endsWith(ext.toLowerCase())) ? 'video' : 'image';
 }
 
+interface NFT {
+  id: string;
+  name: string;
+  description: string;
+  image: string;
+  commercialUse: boolean;
+  derivativeWorks: boolean;
+  expiry: string;
+  mediaType: 'image' | 'video';
+  estimatedValue: number;
+}
+
 export default function RequestLoanContent() {
   const { address, isConnected } = useAccount();
   const searchParams = useSearchParams();
@@ -58,23 +62,158 @@ export default function RequestLoanContent() {
   const [loading, setLoading] = useState(true);
   const [amount, setAmount] = useState<string>('');
   const [duration, setDuration] = useState<string>('30');
-  const [selectedChain, setSelectedChain] = useState<string>('scroll');
+  const [selectedChain, setSelectedChain] = useState<string>('arbitrum');
   const [processingLoan, setProcessingLoan] = useState(false);
   const [loanStatus, setLoanStatus] = useState<string | null>(null);
-  const [txHash, setTxHash] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<Hash | undefined>();
+  const [isApproved, setIsApproved] = useState(false);
 
-  // Fetch token URI and license data
+  // Contract read to check if NFT is approved
+  const { data: approvalData } = useContractReads({
+    contracts: [
+      {
+        address: CONTRACT_ADDRESS as `0x${string}`,
+        abi: ABI,
+        functionName: 'getApproved',
+        args: assetId ? [BigInt(assetId)] : undefined,
+      },
+      {
+        address: CONTRACT_ADDRESS as `0x${string}`,
+        abi: ABI,
+        functionName: 'isApprovedForAll',
+        args: address && COLLATERAL_MANAGER_ADDRESS ? [address, COLLATERAL_MANAGER_ADDRESS] : undefined,
+      }
+    ],
+  });
+
+  // Update approval status when data changes
+  useEffect(() => {
+    if (approvalData) {
+      const isApprovedForToken = approvalData[0]?.result === COLLATERAL_MANAGER_ADDRESS;
+      const isApprovedForAll = approvalData[1]?.result === true;
+      setIsApproved(isApprovedForToken || isApprovedForAll);
+    }
+  }, [approvalData]);
+
+  // Contract write for NFT approval
+  const { writeContract: approveNFT, isPending: isApprovePending } = useWriteContract();
+
+  // Watch transaction status for approval
+  const { isLoading: isApproving } = useWaitForTransactionReceipt({
+    hash: txHash,
+  });
+
+  const handleApprove = async () => {
+    if (!asset) {
+      console.error('Missing asset data');
+      return;
+    }
+    if (!COLLATERAL_MANAGER_ADDRESS) {
+      console.error('Missing collateral manager address');
+      return;
+    }
+    if (!approveNFT) {
+      console.error('Missing approve function');
+      return;
+    }
+
+    console.log('Starting approval with data:', {
+      tokenContract: CONTRACT_ADDRESS,
+      spender: COLLATERAL_MANAGER_ADDRESS,
+      tokenId: asset.id
+    });
+
+    setProcessingLoan(true);
+    setLoanStatus('Approving NFT for collateral...');
+
+    try {
+      const tx = await approveNFT({
+        abi: ABI,
+        address: CONTRACT_ADDRESS as `0x${string}`,
+        functionName: 'approve',
+        args: [COLLATERAL_MANAGER_ADDRESS as `0x${string}`, BigInt(asset.id)],
+      });
+
+      // The transaction will be tracked by the useWaitForTransactionReceipt hook
+      if (typeof tx === 'string') {
+        setTxHash(tx as `0x${string}`);
+        setLoanStatus('Approval transaction submitted. Waiting for confirmation...');
+      }
+    } catch (error: any) {
+      console.error('Error approving NFT:', error);
+      setLoanStatus(`Error approving NFT: ${error.message || 'Please try again'}`);
+      setProcessingLoan(false);
+    }
+  };
+
+  // Update button text based on approval state
+  const getApproveButtonText = () => {
+    if (isApprovePending) return 'Confirm in Wallet...';
+    if (isApproving) return 'Approving...';
+    return 'Approve NFT as Collateral';
+  };
+
+  // Contract write hook
+  const { data, error, isPending, writeContract } = useWriteContract<Config, typeof LOAN_MANAGER_ABI, 'requestLoan'>();
+
+  // Watch transaction status
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
+    hash: txHash,
+  });
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    
+    if (!asset || !amount || !duration || !selectedChain || !address || !writeContract) {
+      alert('Please fill all fields');
+      return;
+    }
+
+    if (!isApproved) {
+      alert('Please approve the NFT first');
+      return;
+    }
+    
+    setProcessingLoan(true);
+    setLoanStatus('Initiating cross-chain loan request via Hyperlane...');
+    
+    try {
+      const amountInWei = parseEther(amount);
+      const durationInSeconds = BigInt(parseInt(duration) * 24 * 60 * 60);
+
+      const hash = await writeContract({
+        address: LOAN_MANAGER_ADDRESS,
+        abi: LOAN_MANAGER_ABI,
+        functionName: 'requestLoan',
+        args: [
+          CONTRACT_ADDRESS,
+          BigInt(asset.id),
+          amountInWei,
+          durationInSeconds
+        ],
+        value: amountInWei + (amountInWei / BigInt(10))
+      });
+
+      setTxHash(hash);
+      setLoanStatus(`Transaction sent! Hash: ${hash}`);
+    } catch (err) {
+      console.error('Error processing loan:', err);
+      setLoanStatus(`Error processing loan: ${err instanceof Error ? err.message : 'Please try again'}`);
+    }
+  };
+
+  // Fetch token URI and license data from IP Registry
   const { data: tokenInfo, isLoading: isLoadingTokenInfo } = useContractReads({
     contracts: assetId ? [
       {
         address: CONTRACT_ADDRESS as `0x${string}`,
-        abi: ABI as Abi,
+        abi: ABI,
         functionName: 'tokenURI',
         args: [BigInt(assetId)],
       },
       {
         address: CONTRACT_ADDRESS as `0x${string}`,
-        abi: ABI as Abi,
+        abi: ABI,
         functionName: 'getLicense',
         args: [BigInt(assetId)],
       }
@@ -110,7 +249,7 @@ export default function RequestLoanContent() {
 
         // Create NFT object
         const nft: NFT = {
-          id: Number(assetId),
+          id: assetId,
           name: metadata.name,
           description: metadata.description,
           image: imageUrl,
@@ -132,42 +271,6 @@ export default function RequestLoanContent() {
 
     fetchAssetData();
   }, [assetId, tokenInfo, isLoadingTokenInfo]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!asset || !amount || !duration || !selectedChain) {
-      alert('Please fill all fields');
-      return;
-    }
-    
-    setProcessingLoan(true);
-    setLoanStatus('Initiating cross-chain loan request via Hyperlane...');
-    
-    try {
-      // Step 1: Lock collateral on Camp network
-      setLoanStatus('Locking your IP NFT as collateral on Camp network...');
-      // TODO: Add contract call to lock NFT
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Step 2: Send Hyperlane message
-      setLoanStatus('Sending cross-chain message via Hyperlane to Scroll...');
-      // TODO: Add Hyperlane message sending
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Step 3: Wait for loan issuance on destination chain
-      setLoanStatus('Waiting for loan issuance on Scroll...');
-      // TODO: Add destination chain transaction monitoring
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      const mockTxHash = '0x' + Array(64).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join('');
-      setTxHash(mockTxHash);
-      setLoanStatus('Loan successfully issued on Scroll!');
-    } catch (error) {
-      console.error('Error processing loan:', error);
-      setLoanStatus('Error processing loan. Please try again.');
-    }
-  };
 
   if (!isConnected) {
     return (
@@ -284,6 +387,16 @@ export default function RequestLoanContent() {
               <span className="text-blue-400">{asset.expiry}</span>
             </div>
           </div>
+
+          {!isApproved && (
+            <button
+              onClick={handleApprove}
+              disabled={isApprovePending || isApproving || processingLoan}
+              className="w-full neo-brutalism-white mb-4"
+            >
+              {getApproveButtonText()}
+            </button>
+          )}
         </div>
         
         {/* Loan Form */}
@@ -305,7 +418,7 @@ export default function RequestLoanContent() {
                     <div className="mt-4 p-4 bg-black/20 rounded-lg">
                       <p className="text-sm text-gray-300 mb-2">Transaction Hash:</p>
                       <a 
-                        href={`https://sepolia.scrollscan.dev/tx/${txHash}`} 
+                        href={`https://${selectedChain === 'arbitrum' ? 'sepolia.arbiscan.io' : 'sepolia.scrollscan.dev'}/tx/${txHash}`} 
                         target="_blank" 
                         rel="noopener noreferrer"
                         className="text-pink-400 break-all text-sm hover:underline"
@@ -338,8 +451,8 @@ export default function RequestLoanContent() {
                   className="w-full bg-black/30 border border-gray-700 rounded-md px-4 py-2 text-white"
                   required
                 >
-                  <option value="scroll">Scroll (Sepolia)</option>
                   <option value="arbitrum">Arbitrum (Sepolia)</option>
+                  <option value="scroll">Scroll (Sepolia)</option>
                 </select>
               </div>
               
@@ -376,10 +489,12 @@ export default function RequestLoanContent() {
               
               <button
                 type="submit"
-                disabled={processingLoan}
-                className="w-full neo-brutalism-white"
+                disabled={isPending || isConfirming}
+                className={`w-full ${isApproved ? 'neo-brutalism-white' : 'neo-brutalism-disabled'}`}
               >
-                {processingLoan ? 'Processing...' : 'Request Loan'}
+                {isPending ? 'Confirming in Wallet...' : 
+                 isConfirming ? 'Confirming on Chain...' : 
+                 'Request Loan'}
               </button>
             </form>
           )}

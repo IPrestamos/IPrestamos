@@ -44,7 +44,7 @@ export default function Providers({ children }: { children: ReactNode }) {
           </main>
           <footer className="bg-black/20 backdrop-blur-md py-8">
             <div className="container mx-auto text-center">
-              <p className="text-gray-400">Powered by Hyperlane & IP Registry • © 2023</p>
+              <p className="text-gray-400">Powered by Hyperlane & Camp Network • © 2025</p>
             </div>
           </footer>
         </RainbowKitProvider>
