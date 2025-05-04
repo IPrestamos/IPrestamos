@@ -40,14 +40,12 @@ This protocol enables creators to:
 
 ```mermaid
 flowchart TD
-    A[User] -->|1. Register IP| B[IP Registry]
-    A -->|2. Request Loan| C[Loan Manager]
-    C -->|3. Lock Collateral| D[Collateral Manager]
-    A -->|4. Repay Loan| C
-    C -->|5. Release Collateral| D
-    B --> E[Hyperlane]
-    C --> E
-    D --> E
+    User --> IPRegistry[IP Registry]
+    User --> LoanManager[Loan Manager]
+    LoanManager --> CollateralManager[Collateral Manager]
+    CollateralManager --> Hyperlane
+    LoanManager --> Hyperlane
+    IPRegistry --> Hyperlane
 ```
 
 ## Key Features
