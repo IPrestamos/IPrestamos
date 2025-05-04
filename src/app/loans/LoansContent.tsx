@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useAccount, useContractRead, useContractWrite } from 'wagmi';
+import { useAccount, useContractReads, useWriteContract, useSimulateContract } from 'wagmi';
 import Image from 'next/image';
 import Link from 'next/link';
 import { LOAN_MANAGER_ADDRESS, LOAN_MANAGER_ABI } from '@/lib/contract';
@@ -55,6 +55,12 @@ interface Loan {
   mediaType: 'image' | 'video';
 }
 
+interface ContractReadResult {
+  error?: Error;
+  result?: unknown;
+  status: 'success' | 'failure';
+}
+
 // Helper function to determine media type
 function getMediaType(filename: string): 'image' | 'video' {
   const videoExtensions = ['.mov', '.mp4', '.webm', '.ogg', '.MOV', '.MP4', '.WEBM', '.OGG'];
@@ -79,18 +85,26 @@ export default function LoansContent() {
   const [repaymentStatus, setRepaymentStatus] = useState<string | null>(null);
 
   // Fetch active loans
-  const { data: loansData, isLoading: isLoadingLoans } = useContractRead({
-    address: LOAN_MANAGER_ADDRESS as `0x${string}`,
-    abi: LOAN_MANAGER_ABI as Abi,
-    functionName: 'getActiveLoans',
+  const { data: loansData, isLoading: isLoadingLoans } = useContractReads({
+    contracts: [
+      {
+        address: LOAN_MANAGER_ADDRESS as `0x${string}`,
+        abi: LOAN_MANAGER_ABI as Abi,
+        functionName: 'getActiveLoans',
+      }
+    ],
   });
 
-  // Contract write for repayment
-  const { write: repayLoan } = useContractWrite({
+  // Simulate repayment
+  const { data: simulateRepayment } = useSimulateContract({
     address: LOAN_MANAGER_ADDRESS as `0x${string}`,
     abi: LOAN_MANAGER_ABI as Abi,
     functionName: 'repayLoan',
+    args: processingRepayment ? [BigInt(processingRepayment)] : undefined,
   });
+
+  // Contract write for repayment
+  const { writeContract: repayLoan, isPending: isRepayPending } = useWriteContract();
 
   // Fetch NFT metadata and loan details
   useEffect(() => {
@@ -101,7 +115,15 @@ export default function LoansContent() {
       }
 
       try {
-        const loans = loansData as LoanData[] || [];
+        const contractResult = loansData[0] as ContractReadResult;
+        if (contractResult.status === 'failure' || !contractResult.result) {
+          console.error('Failed to fetch loans:', contractResult.error);
+          setLoading(false);
+          return;
+        }
+
+        const loans = Array.isArray(contractResult.result) ? 
+          (contractResult.result as LoanData[]) : [];
         
         // Fetch NFT metadata for each loan
         const loanPromises = loans.map(async (loan) => {
@@ -151,7 +173,10 @@ export default function LoansContent() {
   }, [isConnected, address, loansData, isLoadingLoans]);
 
   const handleRepay = async (loanId: string) => {
-    if (!repayLoan) return;
+    if (!simulateRepayment?.request) {
+      console.error('Cannot simulate repayment');
+      return;
+    }
 
     setProcessingRepayment(loanId);
     setRepaymentStatus('Initiating loan repayment...');
@@ -164,8 +189,8 @@ export default function LoansContent() {
       const repaymentAmount = loan.amount * (1 + loan.interestRate / 100);
       
       // Call repayLoan function
-      repayLoan({
-        args: [BigInt(loanId)],
+      await repayLoan({
+        ...simulateRepayment.request,
         value: parseEther(repaymentAmount.toString()),
       });
 
@@ -233,7 +258,7 @@ export default function LoansContent() {
       ) : activeLoans.length === 0 ? (
         <div className="glassmorphism p-10 max-w-md mx-auto text-center">
           <h2 className="text-2xl font-bold mb-4">No Active Loans</h2>
-          <p className="mb-6 text-gray-300">You don't have any active loans.</p>
+          <p className="mb-6 text-gray-300">You don&apos;t have any active loans.</p>
           <Link href="/my-assets" className="neo-brutalism">
             Request a Loan
           </Link>
@@ -328,10 +353,10 @@ export default function LoansContent() {
                   
                   <button
                     onClick={() => handleRepay(loan.id)}
-                    disabled={processingRepayment !== null}
+                    disabled={isRepayPending || processingRepayment !== null}
                     className="w-full neo-brutalism-white"
                   >
-                    {processingRepayment === loan.id ? 'Processing...' : 'Repay Loan'}
+                    {isRepayPending ? 'Processing...' : 'Repay Loan'}
                   </button>
                 </div>
               </div>

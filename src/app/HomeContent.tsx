@@ -4,7 +4,7 @@ import { CONTRACT_ADDRESS, ABI } from '@/lib/contract';
 import { useState } from 'react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount, useWriteContract } from 'wagmi';
-import { NFTStorage, File } from 'nft.storage';
+// import { NFTStorage } from 'nft.storage';
 import { uploadToPinata, uploadMetadataToPinata } from '@/lib/pinata';
 import Link from 'next/link';
 

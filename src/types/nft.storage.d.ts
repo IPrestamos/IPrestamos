@@ -1,11 +1,23 @@
 declare module 'nft.storage' {
   export class NFTStorage {
-    constructor(options: { token: string });
-    store(metadata: any): Promise<any>;
+    constructor(config: { token: string });
+    store(metadata: NFTMetadata): Promise<{ url: string; data: NFTMetadata }>;
   }
-  
-  export class File extends Blob {
-    constructor(data: Uint8Array[], name: string, options?: { type: string });
+
+  export interface NFTMetadata {
     name: string;
+    description: string;
+    image: File | Blob;
+    properties?: Record<string, unknown>;
+  }
+
+  export class File extends Blob {
+    name: string;
+    lastModified: number;
+    constructor(
+      fileBits: BlobPart[],
+      fileName: string,
+      options?: FilePropertyBag
+    );
   }
 } 

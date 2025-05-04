@@ -287,7 +287,7 @@ export default function MyAssetsContent() {
       <div className="container mx-auto px-4 py-16 flex flex-col items-center justify-center min-h-[70vh]">
         <div className="glassmorphism p-10 max-w-md w-full text-center">
           <h1 className="text-3xl font-bold gradient-text mb-6">My IP Assets</h1>
-          <p className="mb-8 text-gray-300">Connect your wallet to view your IP assets</p>
+          <p className="mb-8 text-gray-300">Connect your wallet to view your assets</p>
           <ConnectButton />
         </div>
       </div>
@@ -310,7 +310,7 @@ export default function MyAssetsContent() {
       ) : nfts.length === 0 ? (
         <div className="glassmorphism p-10 max-w-md mx-auto text-center">
           <h2 className="text-2xl font-bold mb-4">No Assets Found</h2>
-          <p className="mb-6 text-gray-300">You don't have any registered IP assets yet.</p>
+          <p className="mb-6 text-gray-300">You don&apos;t have any registered IP assets yet.</p>
           <Link href="/" className="neo-brutalism">
             Register IP
           </Link>
