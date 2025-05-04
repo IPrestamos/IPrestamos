@@ -2,26 +2,59 @@
 
 import { useState, useEffect } from 'react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useAccount, useReadContract } from 'wagmi';
+import { useAccount, useContractReads } from 'wagmi';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
+import { CONTRACT_ADDRESS, ABI } from '@/lib/contract';
+import { Abi } from 'viem';
 
-// Mock function to simulate sending a hyperlane message
-const simulateHyperlaneMessage = async () => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve(true);
-    }, 2000);
-  });
-};
+const IPFS_GATEWAY = 'https://moccasin-mere-chinchilla-829.mypinata.cloud/ipfs/';
+
+function convertIpfsUrl(url: string): string {
+  console.log('Converting IPFS URL:', url);
+  // First remove any malformed prefix
+  const cleanUrl = url.replace('https://sample.com', '');
+  
+  if (cleanUrl.startsWith('ipfs://')) {
+    const converted = cleanUrl.replace('ipfs://', IPFS_GATEWAY);
+    console.log('Converted to:', converted);
+    return converted;
+  }
+  console.log('URL not converted (no ipfs:// prefix):', cleanUrl);
+  return cleanUrl;
+}
+
+interface NFT {
+  id: number;
+  name: string;
+  description: string;
+  image: string;
+  commercialUse: boolean;
+  derivativeWorks: boolean;
+  expiry: string;
+  mediaType: 'image' | 'video';
+  estimatedValue: number;
+}
+
+interface LicenseTerms {
+  commercialUse: boolean;
+  derivativeWorksAllowed: boolean;
+  expiryTimestamp: bigint;
+}
+
+// Helper function to determine media type
+function getMediaType(filename: string): 'image' | 'video' {
+  const videoExtensions = ['.mov', '.mp4', '.webm', '.ogg', '.MOV', '.MP4', '.WEBM', '.OGG'];
+  return videoExtensions.some(ext => filename.toLowerCase().endsWith(ext.toLowerCase())) ? 'video' : 'image';
+}
 
 export default function RequestLoanContent() {
   const { address, isConnected } = useAccount();
   const searchParams = useSearchParams();
   const assetId = searchParams.get('assetId');
   
-  const [asset, setAsset] = useState<any>(null);
+  const [asset, setAsset] = useState<NFT | null>(null);
   const [loading, setLoading] = useState(true);
   const [amount, setAmount] = useState<string>('');
   const [duration, setDuration] = useState<string>('30');
@@ -29,37 +62,76 @@ export default function RequestLoanContent() {
   const [processingLoan, setProcessingLoan] = useState(false);
   const [loanStatus, setLoanStatus] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
-  
-  // Mock data for demonstration purposes
-  const mockAssets = {
-    '1': {
-      id: 1,
-      name: 'Digital Artwork #1',
-      description: 'Abstract digital artwork with vibrant colors',
-      image: 'https://images.unsplash.com/photo-1547891654-e66ed7ebb968?q=80&w=300&h=300&auto=format&fit=crop',
-      commercialUse: true,
-      derivativeWorks: false,
-      expiry: '2024-12-31',
-      estimatedValue: 0.5 // ETH
-    },
-    '2': {
-      id: 2,
-      name: 'Music Composition',
-      description: 'Original electronic music track',
-      image: 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?q=80&w=300&h=300&auto=format&fit=crop',
-      commercialUse: false,
-      derivativeWorks: true,
-      expiry: '2025-06-15',
-      estimatedValue: 0.3 // ETH
-    }
-  };
+
+  // Fetch token URI and license data
+  const { data: tokenInfo, isLoading: isLoadingTokenInfo } = useContractReads({
+    contracts: assetId ? [
+      {
+        address: CONTRACT_ADDRESS as `0x${string}`,
+        abi: ABI as Abi,
+        functionName: 'tokenURI',
+        args: [BigInt(assetId)],
+      },
+      {
+        address: CONTRACT_ADDRESS as `0x${string}`,
+        abi: ABI as Abi,
+        functionName: 'getLicense',
+        args: [BigInt(assetId)],
+      }
+    ] : [],
+  });
 
   useEffect(() => {
-    if (assetId && mockAssets[assetId as keyof typeof mockAssets]) {
-      setAsset(mockAssets[assetId as keyof typeof mockAssets]);
+    async function fetchAssetData() {
+      if (!assetId || !tokenInfo || isLoadingTokenInfo) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const uri = tokenInfo[0]?.result as string;
+        const license = tokenInfo[1]?.result as LicenseTerms;
+
+        if (!uri || !license) {
+          console.log('Missing uri or license data');
+          setLoading(false);
+          return;
+        }
+
+        // Fetch metadata from IPFS
+        const metadataUrl = convertIpfsUrl(uri);
+        console.log('Fetching metadata from:', metadataUrl);
+        const response = await fetch(metadataUrl);
+        const metadata = await response.json();
+        
+        // Convert the nested image URL
+        const imageUrl = convertIpfsUrl(metadata.image);
+        console.log('Converted image URL:', imageUrl);
+
+        // Create NFT object
+        const nft: NFT = {
+          id: Number(assetId),
+          name: metadata.name,
+          description: metadata.description,
+          image: imageUrl,
+          commercialUse: license.commercialUse,
+          derivativeWorks: license.derivativeWorksAllowed,
+          expiry: new Date(Number(license.expiryTimestamp) * 1000).toISOString().split('T')[0],
+          mediaType: getMediaType(metadata.name),
+          // For now, use a simple calculation for estimated value
+          estimatedValue: license.commercialUse ? 0.5 : 0.3
+        };
+
+        setAsset(nft);
+      } catch (error) {
+        console.error('Error fetching asset data:', error);
+      } finally {
+        setLoading(false);
+      }
     }
-    setLoading(false);
-  }, [assetId]);
+
+    fetchAssetData();
+  }, [assetId, tokenInfo, isLoadingTokenInfo]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,19 +144,29 @@ export default function RequestLoanContent() {
     setProcessingLoan(true);
     setLoanStatus('Initiating cross-chain loan request via Hyperlane...');
     
-    // Step 1: Simulate locking collateral on Camp network
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setLoanStatus('Locking your IP NFT as collateral on Camp network...');
-    
-    // Step 2: Simulate sending Hyperlane message
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    setLoanStatus('Sending cross-chain message via Hyperlane to Scroll...');
-    
-    // Step 3: Simulate loan issued on destination chain
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    const mockTxHash = '0x' + Array(64).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join('');
-    setTxHash(mockTxHash);
-    setLoanStatus('Loan successfully issued on Scroll!');
+    try {
+      // Step 1: Lock collateral on Camp network
+      setLoanStatus('Locking your IP NFT as collateral on Camp network...');
+      // TODO: Add contract call to lock NFT
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // Step 2: Send Hyperlane message
+      setLoanStatus('Sending cross-chain message via Hyperlane to Scroll...');
+      // TODO: Add Hyperlane message sending
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Step 3: Wait for loan issuance on destination chain
+      setLoanStatus('Waiting for loan issuance on Scroll...');
+      // TODO: Add destination chain transaction monitoring
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      const mockTxHash = '0x' + Array(64).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join('');
+      setTxHash(mockTxHash);
+      setLoanStatus('Loan successfully issued on Scroll!');
+    } catch (error) {
+      console.error('Error processing loan:', error);
+      setLoanStatus('Error processing loan. Please try again.');
+    }
   };
 
   if (!isConnected) {
@@ -135,6 +217,10 @@ export default function RequestLoanContent() {
     );
   }
 
+  if (!asset) {
+    return null;
+  }
+
   return (
     <div className="container mx-auto px-4">
       <div className="text-center mb-12">
@@ -150,12 +236,23 @@ export default function RequestLoanContent() {
           <h2 className="text-2xl font-bold mb-4 gradient-text">Collateral</h2>
           
           <div className="relative w-full h-64 mb-6 rounded-lg overflow-hidden">
-            <Image 
-              src={asset.image} 
-              alt={asset.name}
-              fill
-              className="object-cover"
-            />
+            {asset.mediaType === 'image' ? (
+              <Image 
+                src={asset.image} 
+                alt={asset.name}
+                fill
+                className="object-cover"
+              />
+            ) : (
+              <video 
+                src={asset.image}
+                controls
+                className="w-full h-full object-cover"
+                poster={asset.image.replace(/\.[^/.]+$/, '_thumbnail.jpg')}
+              >
+                Your browser does not support the video tag.
+              </video>
+            )}
           </div>
           
           <h3 className="text-xl font-bold mb-2">{asset.name}</h3>
@@ -174,6 +271,12 @@ export default function RequestLoanContent() {
               <span className="text-gray-400">Commercial Use:</span>
               <span className={asset.commercialUse ? "text-green-400" : "text-red-400"}>
                 {asset.commercialUse ? "Allowed" : "Not Allowed"}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-400">Derivatives:</span>
+              <span className={asset.derivativeWorks ? "text-green-400" : "text-red-400"}>
+                {asset.derivativeWorks ? "Allowed" : "Not Allowed"}
               </span>
             </div>
             <div className="flex justify-between">
@@ -248,41 +351,36 @@ export default function RequestLoanContent() {
                   placeholder="0.00"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  max={(asset.estimatedValue * 0.7).toString()}
+                  max={asset.estimatedValue * 0.7}
                   className="w-full bg-black/30 border border-gray-700 rounded-md px-4 py-2 text-white"
                   required
                 />
-                <p className="mt-1 text-sm text-gray-400">Maximum: {(asset.estimatedValue * 0.7).toFixed(3)} ETH</p>
+                <p className="mt-1 text-sm text-gray-400">
+                  Max: {(asset.estimatedValue * 0.7).toFixed(3)} ETH
+                </p>
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Loan Duration (days)</label>
-                <input
-                  type="number"
-                  placeholder="30"
+                <label className="block text-sm font-medium text-gray-300 mb-2">Loan Duration (Days)</label>
+                <select
                   value={duration}
                   onChange={(e) => setDuration(e.target.value)}
-                  min="1"
-                  max="365"
                   className="w-full bg-black/30 border border-gray-700 rounded-md px-4 py-2 text-white"
                   required
-                />
-              </div>
-              
-              <div className="pt-4">
-                <button
-                  type="submit"
-                  disabled={processingLoan}
-                  className={`w-full bg-gradient-to-r from-pink-500 to-purple-600 text-white py-3 px-4 rounded-md text-center font-bold hover:brightness-110 transition ${processingLoan ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                  {processingLoan ? 'Processing...' : '🚀 Request Loan'}
-                </button>
+                  <option value="30">30 Days</option>
+                  <option value="60">60 Days</option>
+                  <option value="90">90 Days</option>
+                </select>
               </div>
               
-              <div className="text-sm text-gray-400 text-center pt-4">
-                <p>Your IP will be locked as collateral on Camp network.</p>
-                <p>The loan will be issued on {selectedChain === 'scroll' ? 'Scroll' : 'Arbitrum'} via Hyperlane.</p>
-              </div>
+              <button
+                type="submit"
+                disabled={processingLoan}
+                className="w-full neo-brutalism-white"
+              >
+                {processingLoan ? 'Processing...' : 'Request Loan'}
+              </button>
             </form>
           )}
         </div>

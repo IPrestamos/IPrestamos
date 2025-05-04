@@ -2,80 +2,196 @@
 
 import { useState, useEffect } from 'react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useAccount } from 'wagmi';
+import { useAccount, useContractRead, useContractWrite } from 'wagmi';
 import Image from 'next/image';
 import Link from 'next/link';
+import { CONTRACT_ADDRESS, ABI } from '@/lib/contract';
+import { Abi, parseEther } from 'viem';
+
+const IPFS_GATEWAY = 'https://moccasin-mere-chinchilla-829.mypinata.cloud/ipfs/';
+
+function convertIpfsUrl(url: string): string {
+  console.log('Converting IPFS URL:', url);
+  // First remove any malformed prefix
+  const cleanUrl = url.replace('https://sample.com', '');
+  
+  if (cleanUrl.startsWith('ipfs://')) {
+    const converted = cleanUrl.replace('ipfs://', IPFS_GATEWAY);
+    console.log('Converted to:', converted);
+    return converted;
+  }
+  console.log('URL not converted (no ipfs:// prefix):', cleanUrl);
+  return cleanUrl;
+}
+
+interface NFTMetadata {
+  name: string;
+  description: string;
+  image: string;
+}
+
+interface LoanData {
+  tokenId: bigint;
+  amount: bigint;
+  dueDate: bigint;
+  issuedDate: bigint;
+  interestRate: bigint;
+  destinationChain: string;
+  status: 'active' | 'repaid' | 'defaulted';
+}
+
+interface Loan {
+  id: string;
+  assetId: number;
+  assetName: string;
+  assetImage: string;
+  amount: number;
+  dueDate: string;
+  issuedDate: string;
+  sourceChain: string;
+  destinationChain: string;
+  status: 'active' | 'repaid' | 'defaulted';
+  interestRate: number;
+  mediaType: 'image' | 'video';
+}
+
+// Helper function to determine media type
+function getMediaType(filename: string): 'image' | 'video' {
+  const videoExtensions = ['.mov', '.mp4', '.webm', '.ogg', '.MOV', '.MP4', '.WEBM', '.OGG'];
+  return videoExtensions.some(ext => filename.toLowerCase().endsWith(ext.toLowerCase())) ? 'video' : 'image';
+}
+
+// Helper function to format date
+function formatDate(timestamp: bigint): string {
+  return new Date(Number(timestamp) * 1000).toISOString().split('T')[0];
+}
+
+// Helper function to format amount from wei to ETH
+function formatAmount(amount: bigint): number {
+  return Number(amount) / 1e18;
+}
 
 export default function LoansContent() {
   const { address, isConnected } = useAccount();
-  const [activeLoans, setActiveLoans] = useState<any[]>([]);
+  const [activeLoans, setActiveLoans] = useState<Loan[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingRepayment, setProcessingRepayment] = useState<string | null>(null);
   const [repaymentStatus, setRepaymentStatus] = useState<string | null>(null);
 
-  // Mock data for demonstration purposes
-  const mockLoans = [
-    {
-      id: '0x1234567890abcdef',
-      assetId: 1,
-      assetName: 'Digital Artwork #1',
-      assetImage: 'https://images.unsplash.com/photo-1547891654-e66ed7ebb968?q=80&w=300&h=300&auto=format&fit=crop',
-      amount: 0.35,
-      dueDate: '2024-09-15',
-      issuedDate: '2024-06-15',
-      sourceChain: 'Camp Network',
-      destinationChain: 'Scroll',
-      status: 'active',
-      interestRate: 5.2
-    },
-    {
-      id: '0xabcdef1234567890',
-      assetId: 2,
-      assetName: 'Music Composition',
-      assetImage: 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?q=80&w=300&h=300&auto=format&fit=crop',
-      amount: 0.2,
-      dueDate: '2024-07-25',
-      issuedDate: '2024-06-10',
-      sourceChain: 'Camp Network',
-      destinationChain: 'Arbitrum',
-      status: 'active',
-      interestRate: 4.8
-    }
-  ];
+  // Fetch active loans
+  const { data: loansData, isLoading: isLoadingLoans } = useContractRead({
+    address: CONTRACT_ADDRESS as `0x${string}`,
+    abi: ABI as Abi,
+    functionName: 'getActiveLoans',
+  });
 
+  // Contract write for repayment
+  const { write: repayLoan } = useContractWrite({
+    ...CONTRACT_ADDRESS && {
+      address: CONTRACT_ADDRESS as `0x${string}`,
+    },
+    abi: ABI as Abi,
+    functionName: 'repayLoan',
+  });
+
+  // Fetch NFT metadata and loan details
   useEffect(() => {
-    if (isConnected) {
-      // In a real app, you would fetch the user's loans from the contracts
-      // For demo purposes, we're using mock data
-      setTimeout(() => {
-        setActiveLoans(mockLoans);
+    async function fetchLoansData() {
+      if (!isConnected || !address || !loansData || isLoadingLoans) {
         setLoading(false);
-      }, 1000);
+        return;
+      }
+
+      try {
+        const loans = loansData as LoanData[] || [];
+        
+        // Fetch NFT metadata for each loan
+        const loanPromises = loans.map(async (loan) => {
+          try {
+            // Get token URI
+            const tokenUriResult = await fetch(`${CONTRACT_ADDRESS}/token/${loan.tokenId}/uri`);
+            const tokenUri = await tokenUriResult.text();
+            
+            // Fetch metadata from IPFS
+            const metadataUrl = convertIpfsUrl(tokenUri);
+            const metadataResponse = await fetch(metadataUrl);
+            const metadata: NFTMetadata = await metadataResponse.json();
+            
+            // Convert image URL
+            const imageUrl = convertIpfsUrl(metadata.image);
+
+            return {
+              id: loan.tokenId.toString(),
+              assetId: Number(loan.tokenId),
+              assetName: metadata.name,
+              assetImage: imageUrl,
+              amount: formatAmount(loan.amount),
+              dueDate: formatDate(loan.dueDate),
+              issuedDate: formatDate(loan.issuedDate),
+              sourceChain: 'Camp Network',
+              destinationChain: loan.destinationChain,
+              status: loan.status,
+              interestRate: Number(loan.interestRate) / 100, // Convert basis points to percentage
+              mediaType: getMediaType(metadata.name)
+            } as Loan;
+          } catch (error) {
+            console.error(`Error fetching metadata for loan ${loan.tokenId}:`, error);
+            return null;
+          }
+        });
+
+        const fetchedLoans = (await Promise.all(loanPromises)).filter((loan): loan is Loan => loan !== null);
+        setActiveLoans(fetchedLoans);
+      } catch (error) {
+        console.error('Error fetching loans data:', error);
+      } finally {
+        setLoading(false);
+      }
     }
-  }, [isConnected, address]);
+
+    fetchLoansData();
+  }, [isConnected, address, loansData, isLoadingLoans]);
 
   const handleRepay = async (loanId: string) => {
+    if (!repayLoan) return;
+
     setProcessingRepayment(loanId);
     setRepaymentStatus('Initiating loan repayment...');
     
-    // Step 1: Simulate repayment on destination chain
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setRepaymentStatus('Processing payment on ' + (activeLoans.find(l => l.id === loanId)?.destinationChain || 'destination chain') + '...');
-    
-    // Step 2: Simulate Hyperlane message to release collateral
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    setRepaymentStatus('Sending Hyperlane message to release your IP collateral...');
-    
-    // Step 3: Simulate collateral release on source chain
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    setRepaymentStatus('Success! Your IP has been released on Camp Network.');
-    
-    // Update loans list
-    setTimeout(() => {
-      setActiveLoans(activeLoans.filter(loan => loan.id !== loanId));
-      setProcessingRepayment(null);
-      setRepaymentStatus(null);
-    }, 3000);
+    try {
+      const loan = activeLoans.find(l => l.id === loanId);
+      if (!loan) throw new Error('Loan not found');
+
+      // Calculate repayment amount with interest
+      const repaymentAmount = loan.amount * (1 + loan.interestRate / 100);
+      
+      // Call repayLoan function
+      repayLoan({
+        args: [BigInt(loanId)],
+        value: parseEther(repaymentAmount.toString()),
+      });
+
+      setRepaymentStatus('Processing payment...');
+      
+      // Remove the loan from the list after a delay
+      setTimeout(() => {
+        setActiveLoans(prev => prev.filter(l => l.id !== loanId));
+        setProcessingRepayment(null);
+        setRepaymentStatus('Success! Your IP has been released on Camp Network.');
+        
+        // Clear status after a delay
+        setTimeout(() => {
+          setRepaymentStatus(null);
+        }, 3000);
+      }, 5000);
+    } catch (error) {
+      console.error('Error processing repayment:', error);
+      setRepaymentStatus('Error processing repayment. Please try again.');
+      setTimeout(() => {
+        setProcessingRepayment(null);
+        setRepaymentStatus(null);
+      }, 3000);
+    }
   };
 
   const calculateTimeLeft = (dueDate: string) => {
@@ -144,12 +260,22 @@ export default function LoansContent() {
                   <h3 className="text-xl font-bold mb-3">Collateral</h3>
                   <div className="flex items-center">
                     <div className="relative w-16 h-16 rounded-lg overflow-hidden">
-                      <Image 
-                        src={loan.assetImage} 
-                        alt={loan.assetName}
-                        fill
-                        className="object-cover"
-                      />
+                      {loan.mediaType === 'image' ? (
+                        <Image 
+                          src={loan.assetImage} 
+                          alt={loan.assetName}
+                          fill
+                          className="object-cover"
+                        />
+                      ) : (
+                        <video 
+                          src={loan.assetImage}
+                          className="w-full h-full object-cover"
+                          poster={loan.assetImage.replace(/\.[^/.]+$/, '_thumbnail.jpg')}
+                        >
+                          Your browser does not support the video tag.
+                        </video>
+                      )}
                     </div>
                     <div className="ml-4">
                       <p className="font-medium">{loan.assetName}</p>
@@ -198,36 +324,17 @@ export default function LoansContent() {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Repayment:</span>
-                      <span className="text-green-400">{(loan.amount * (1 + loan.interestRate/100)).toFixed(4)} ETH</span>
+                      <span className="text-green-400">{(loan.amount * (1 + loan.interestRate / 100)).toFixed(3)} ETH</span>
                     </div>
                   </div>
                   
                   <button
                     onClick={() => handleRepay(loan.id)}
-                    disabled={!!processingRepayment}
-                    className={`w-full py-3 px-4 rounded-md text-center font-bold transition ${
-                      processingRepayment ? 
-                      'bg-gray-700 text-gray-300 cursor-not-allowed' : 
-                      'bg-gradient-to-r from-pink-500 to-purple-600 text-white hover:brightness-110'
-                    }`}
+                    disabled={processingRepayment !== null}
+                    className="w-full neo-brutalism-white"
                   >
-                    {processingRepayment === loan.id ? 'Processing...' : '🔄 Repay Loan'}
+                    {processingRepayment === loan.id ? 'Processing...' : 'Repay Loan'}
                   </button>
-                  
-                  <div className="text-xs text-gray-400 mt-3 text-center">
-                    <p>Repaying will release your IP on {loan.sourceChain}</p>
-                    <p>via Hyperlane cross-chain messaging</p>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Chain Badges */}
-              <div className="absolute -top-3 right-6 flex space-x-2">
-                <div className="bg-black/50 px-3 py-1 rounded-full text-xs font-medium border border-white/10">
-                  {loan.sourceChain}
-                </div>
-                <div className="bg-gradient-to-r from-pink-500/30 to-purple-500/30 px-3 py-1 rounded-full text-xs font-medium border border-white/10">
-                  {loan.destinationChain}
                 </div>
               </div>
             </div>
