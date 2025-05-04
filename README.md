@@ -1,36 +1,106 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# IP-Backed Lending Protocol
+
+A decentralized lending protocol that enables NFT holders to use their intellectual property as collateral for loans, built during ETHGlobal Camp and deployed on Arbitrum.
+
+## Overview
+
+This protocol enables creators to:
+1. Register their intellectual property as NFTs
+2. Use these IP NFTs as collateral for loans
+3. Manage loan terms and repayments across chains using Hyperlane
+
+## Smart Contracts
+
+### On Camp Chain
+- **IP Registry (NFT Contract)**
+  - Address: `${CONTRACT_ADDRESS}`
+  - Features:
+    - Mint soulbound IP tokens
+    - Set license terms (commercial use, derivatives)
+    - Implement EIP-2981 for royalties
+    - Store metadata on Pinata IPFS
+
+- **Collateral Manager**
+  - Address: `${COLLATERAL_MANAGER_ADDRESS}`
+  - Features:
+    - Lock NFT collateral during loan period
+    - Release collateral upon loan repayment
+    - Cross-chain communication via Hyperlane
+
+### On Arbitrum
+- **Loan Manager**
+  - Address: `${LOAN_MANAGER_ADDRESS}`
+  - Features:
+    - Process loan requests
+    - Handle loan repayments
+    - Calculate interest (5% fixed rate)
+    - Cross-chain collateral management
+
+## Architecture
+
+```mermaid
+graph TD
+    A[User] -->|1. Register IP| B[IP Registry]
+    A -->|2. Request Loan| C[Loan Manager]
+    C -->|3. Lock Collateral| D[Collateral Manager]
+    A -->|4. Repay Loan| C
+    C -->|5. Release Collateral| D
+    B & C & D -->|Cross-chain Messages| E[Hyperlane]
+```
+
+## Key Features
+
+- **Cross-chain Lending**: Utilize Hyperlane for secure cross-chain communication
+- **IP Registration**: Secure intellectual property registration with customizable license terms
+- **Flexible Loan Terms**: Configurable loan amounts and durations
+- **Automated Interest**: 5% fixed interest rate calculated based on loan duration
+- **Collateral Management**: Automatic locking and release of NFT collateral
+
+## Technical Stack
+
+- **Frontend**: Next.js, RainbowKit, Wagmi
+- **Storage**: Pinata IPFS
+- **Cross-chain**: Hyperlane Protocol
+- **Smart Contracts**: Solidity 0.8.20
+- **Development**: Hardhat, TypeScript
 
 ## Getting Started
 
-First, run the development server:
-
+1. Install dependencies:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Run development server:
+```bash
+npm run dev
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Build for production:
+```bash
+npm run build
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Environment Variables
 
-## Learn More
+Create a `.env` file with:
 
-To learn more about Next.js, take a look at the following resources:
+```env
+NEXT_PUBLIC_CONTRACT_ADDRESS=your_ip_registry_address
+NEXT_PUBLIC_LOAN_MANAGER_ADDRESS=your_loan_manager_address
+NEXT_PUBLIC_COLLATERAL_MANAGER_ADDRESS=your_collateral_manager_address
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Contributing
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+This project was built during ETHGlobal Camp hackathon. Feel free to submit issues and enhancement requests.
 
-## Deploy on Vercel
+## License
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+MIT
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Acknowledgments
+
+- ETHGlobal Camp
+- Hyperlane Team
+- Arbitrum Foundation
