@@ -98,10 +98,22 @@ npm run build
 Create a `.env` file with:
 
 ```env
+# Contract Addresses
 NEXT_PUBLIC_CONTRACT_ADDRESS=your_ip_registry_address
 NEXT_PUBLIC_LOAN_MANAGER_ADDRESS=your_loan_manager_address
 NEXT_PUBLIC_COLLATERAL_MANAGER_ADDRESS=your_collateral_manager_address
+
+# Pinata IPFS
+NEXT_PUBLIC_PINATA_API_KEY=your_pinata_api_key
+NEXT_PUBLIC_PINATA_SECRET_KEY=your_pinata_secret_key
 ```
+
+To get your Pinata API keys:
+1. Create an account at [Pinata](https://app.pinata.cloud)
+2. Go to API Keys section
+3. Generate a new key with the following permissions:
+   - pinFileToIPFS
+   - pinJSONToIPFS
 
 ## Contributing
 
